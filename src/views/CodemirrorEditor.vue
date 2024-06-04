@@ -101,6 +101,8 @@ import RightClickMenu from '@/components/CodemirrorEditor/RightClickMenu'
 import UploadImgDialog from '@/components/CodemirrorEditor/UploadImgDialog'
 import CssEditor from '@/components/CodemirrorEditor/CssEditor'
 import RunLoading from '@/components/RunLoading'
+import SockJS from 'sockjs-client/dist/sockjs'
+import Stomp from 'stompjs'
 
 import {
   css2json,
@@ -157,13 +159,14 @@ export default {
     }),
   },
   created() {
-    this.initEditorState()
-    this.$nextTick(() => {
-      this.initEditor()
-      this.initCssEditor()
-      this.onEditorRefresh()
-      this.mdLocalToRemote()
-    })
+    this.initEditorState(),
+      this.initWebSocket(),
+      this.$nextTick(() => {
+        this.initEditor()
+        this.initCssEditor()
+        this.onEditorRefresh()
+        this.mdLocalToRemote()
+      })
   },
   methods: {
     // 转换 markdown 中的本地图片为线上图片
@@ -263,6 +266,34 @@ export default {
         return result
       }
     },
+
+    initWebSocket() {
+      let self = this
+
+      console.log(`开始建立连接`, self.editor)
+      let stompClient = null
+      let url = `http://localhost:8080/websocket`
+      if (url.value && url.value.startsWith(`ws`)) {
+        stompClient = Stomp.over(new WebSocket(url))
+      } else {
+        stompClient = Stomp.over(new SockJS(url))
+      }
+
+      const headers = {}
+
+      stompClient.connect(headers, (resp) => {
+        console.log(`建立连接完成!`)
+        stompClient.subscribe(`/topic/send/content`, function (response) {
+          console.log(`收到数据`, response.body)
+          self.editor.setValue(response.body)
+
+          setTimeout(function () {
+            stompClient.send(`/app/md/html`, { priority: 9 }, self.output)
+          }, 500)
+        })
+      })
+    },
+
     initEditor() {
       this.initEditorEntity()
       this.editor.on(`change`, (cm, e) => {
